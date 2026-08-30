@@ -11,6 +11,50 @@ free-text book descriptions (e.g. `"dune - frank herbert"` or `"Project Hail Mar
   first publish year, Open Library links, and a plain-language explanation of each result's
   ranking.
 
+## Notes
+
+### Priorities
+
+When in doubt about what to implement, I focused on resiliency over features. Features can always
+be added later, and having the metrics and resiliency from the beginning makes it easier to keep
+up with as you add more of them. To that end, I added OTel metrics, retry logic, caching, and
+tests first. In a real production app, I'd make a few changes to these:
+
+- Upgrade the caching scheme to something like redis, but as a proof-of-concept, an in memory
+  cache will get the job done.
+- Add alerts connected to the OTel metrics through some service like grafana, so that we don't
+  have to find out everything's going sideways by checking it manually
+- Circuit breaker trips are currently just a blind value, I'd scale it to actual production data
+  when that exists
+
+### Testing Strategy
+
+I erred on the side of overtesting rather than undertesting, pretty much every item got its test
+suite (happy paths, common errors, standard unit testing work) as soon as I added it. This came
+in handy when I removed confidence scoring late in my time (explained in the next note) and the 
+tests pointed out every single spot that change broke.
+
+### Deterministic/LLM split
+
+I initially attempted to handle much more of the parsing deterministically, but kept handing more
+of it off to the llm as time wound on and I kept finding bunk results when the title or author were
+off even a little, I eventually required a title and author match to not go through the llm at some 
+point, as a result, I tailored the OTel metrics around determining how much the (now quite limited)
+deterministic approach actually saves in terms of calls to the gemini API. This also led to the
+removal of an (at that point) unused confidence scoring scheme in favor of a binary
+deterministic/llm switch, there's at least one or two artifacts of this that I'd trim given more
+time, but I decided to focus on resilience rather than code cleanliness at the end of my time.
+
+### Prompt Engineering
+
+The prompt could use some more love and attention, I chose to focus on resilience and production 
+considerations over prompt work, but given infinite time, I would likely work on this next. 
+
+### Parsing explanation on the frontend
+
+I originally added the explanation to the frontend (under the searchbar, after searching) just for 
+testing, but I ended up liking it, so I left it in the final version
+
 ## Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
@@ -152,49 +196,5 @@ Throughout, `BookSearchMetrics` records outcome/duration/extraction-source/LLM-f
 retry-depth/result-count metrics (see [Viewing OpenTelemetry metrics locally](#3-optional-viewing-opentelemetry-metrics-locally)
 above), and `CachingOpenLibraryClient`/`CachingLlmBookInfoExtractor` cache Open Library and Gemini
 results in-process to avoid redundant outbound calls for repeated or popular queries.
-
-## Notes
-
-### Priorities
-
-When in doubt about what to implement, I focused on resiliency over features. Features can always
-be added later, and having the metrics and resiliency from the beginning makes it easier to keep
-up with as you add more of them. To that end, I added OTel metrics, retry logic, caching, and
-tests first. In a real production app, I'd make a few changes to these:
-
-- Upgrade the caching scheme to something like redis, but as a proof-of-concept, an in memory
-  cache will get the job done.
-- Add alerts connected to the OTel metrics through some service like grafana, so that we don't
-  have to find out everything's going sideways by checking it manually
-- Circuit breaker trips are currently just a blind value, I'd scale it to actual production data
-  when that exists
-
-### Testing Strategy
-
-I erred on the side of overtesting rather than undertesting, pretty much every item got its test
-suite (happy paths, common errors, standard unit testing work) as soon as I added it. This came
-in handy when I removed confidence scoring late in my time (explained in the next note) and the 
-tests pointed out every single spot that change broke.
-
-### Deterministic/LLM split
-
-I initially attempted to handle much more of the parsing deterministically, but kept handing more
-of it off to the llm as time wound on and I kept finding bunk results when the title or author were
-off even a little, I eventually required a title and author match to not go through the llm at some 
-point, as a result, I tailored the OTel metrics around determining how much the (now quite limited)
-deterministic approach actually saves in terms of calls to the gemini API. This also led to the
-removal of an (at that point) unused confidence scoring scheme in favor of a binary
-deterministic/llm switch, there's at least one or two artifacts of this that I'd trim given more
-time, but I decided to focus on resilience rather than code cleanliness at the end of my time.
-
-### Prompt Engineering
-
-The prompt could use some more love and attention, I chose to focus on resilience and production 
-considerations over prompt work, but given infinite time, I would likely work on this next. 
-
-### Parsing explanation on the frontend
-
-I originally added the explanation to the frontend (under the searchbar, after searching) just for 
-testing, but I ended up liking it, so I left it in the final version
 
 ## Thank you for your consideration

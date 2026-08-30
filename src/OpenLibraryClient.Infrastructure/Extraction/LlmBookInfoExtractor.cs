@@ -47,6 +47,8 @@ public sealed class LlmBookInfoExtractor(
         - "explanation" is a short, one-to-two sentence rationale for why you extracted these specific
           fields from the query (e.g. what in the text indicated the title vs. the author vs. keywords).
         - Do not invent information that isn't implied by the query.
+        - Attempt to offer the title and author if it is clear that is the book the user is describing, 
+          even if the user didn't explicitly say "title" or "author" or one of the standard templates.
         """;
 
     public async Task<ExtractionResult> ExtractAsync(string bookInfo, CancellationToken cancellationToken = default)

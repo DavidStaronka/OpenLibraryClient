@@ -8,12 +8,11 @@ namespace OpenLibraryClient.Tests.Extraction;
 public class BookInfoExtractorTests
 {
     private static ExtractionResult Deterministic(
-        string? title, string? author, string[]? keywords = null, double confidence = 0.85) => new()
+        string? title, string? author, string[]? keywords = null) => new()
     {
         Title = title,
         Author = author,
         Keywords = keywords ?? [],
-        Confidence = confidence,
         Source = ExtractionSource.Deterministic,
         RawQuery = "raw"
     };
@@ -23,25 +22,23 @@ public class BookInfoExtractorTests
         Title = title,
         Author = author,
         Keywords = [],
-        Confidence = 0.9,
         Source = ExtractionSource.Llm,
         RawQuery = "raw"
     };
 
-    private static (BookInfoExtractor Extractor, Mock<IDeterministicParser> Parser, Mock<ILlmBookInfoExtractor> Llm) CreateSut(
-        double confidenceThreshold = 0.65)
+    private static (BookInfoExtractor Extractor, Mock<IDeterministicParser> Parser, Mock<ILlmBookInfoExtractor> Llm) CreateSut()
     {
         var parser = new Mock<IDeterministicParser>();
         var llm = new Mock<ILlmBookInfoExtractor>();
-        var extractor = new BookInfoExtractor(parser.Object, llm.Object, confidenceThreshold);
+        var extractor = new BookInfoExtractor(parser.Object, llm.Object);
         return (extractor, parser, llm);
     }
 
     [Fact]
-    public async Task ExtractAsync_HighConfidenceDeterministicMatch_ReturnsDeterministicWithoutCallingLlm()
+    public async Task ExtractAsync_StructuredDeterministicMatch_ReturnsDeterministicWithoutCallingLlm()
     {
         var (extractor, parser, llm) = CreateSut();
-        parser.Setup(p => p.Parse(It.IsAny<string>())).Returns(Deterministic("Dune", "Frank Herbert", confidence: 0.85));
+        parser.Setup(p => p.Parse(It.IsAny<string>())).Returns(Deterministic("Dune", "Frank Herbert"));
 
         var result = await extractor.ExtractAsync("Dune by Frank Herbert");
 
@@ -58,7 +55,7 @@ public class BookInfoExtractorTests
         // recognizable separator pattern. Even short inputs like a bare title now go straight to
         // the LLM rather than being tried against Open Library as a raw/keyword query first.
         var (extractor, parser, llm) = CreateSut();
-        parser.Setup(p => p.Parse(bookInfo)).Returns(Deterministic(null, null, keywords: bookInfo.Split(' '), confidence: 0.2));
+        parser.Setup(p => p.Parse(bookInfo)).Returns(Deterministic(null, null, keywords: bookInfo.Split(' ')));
         llm.Setup(l => l.ExtractAsync(bookInfo, It.IsAny<CancellationToken>())).ReturnsAsync(Llm());
 
         var result = await extractor.ExtractAsync(bookInfo);
@@ -72,7 +69,7 @@ public class BookInfoExtractorTests
     {
         const string bookInfo = "some scifi book about a giant sandworm desert planet dune spice by frank herbert i think";
         var (extractor, parser, llm) = CreateSut();
-        parser.Setup(p => p.Parse(bookInfo)).Returns(Deterministic(null, null, keywords: ["scifi", "sandworm"], confidence: 0.2));
+        parser.Setup(p => p.Parse(bookInfo)).Returns(Deterministic(null, null, keywords: ["scifi", "sandworm"]));
         llm.Setup(l => l.ExtractAsync(bookInfo, It.IsAny<CancellationToken>())).ReturnsAsync(Llm());
 
         var result = await extractor.ExtractAsync(bookInfo);
@@ -82,13 +79,14 @@ public class BookInfoExtractorTests
     }
 
     [Fact]
-    public async Task ExtractAsync_LowConfidenceStructuredMatch_FallsBackToLlm()
+    public async Task ExtractAsync_AmbiguousCommaSeparatedInput_FallsBackToLlm()
     {
-        // Has a title/author (structured match found), just below the confidence threshold -
-        // an ambiguous separator match should still consult the LLM.
+        // A bare comma is deliberately not recognized as a structured separator (title/author
+        // order is ambiguous), so DeterministicParser treats this as an unstructured keyword bag
+        // and BookInfoExtractor must hand it off to the LLM.
         const string bookInfo = "Title, Author";
         var (extractor, parser, llm) = CreateSut();
-        parser.Setup(p => p.Parse(bookInfo)).Returns(Deterministic("Title", "Author", confidence: 0.55));
+        parser.Setup(p => p.Parse(bookInfo)).Returns(Deterministic(null, null, keywords: ["title", "author"]));
         llm.Setup(l => l.ExtractAsync(bookInfo, It.IsAny<CancellationToken>())).ReturnsAsync(Llm());
 
         var result = await extractor.ExtractAsync(bookInfo);

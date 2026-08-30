@@ -69,7 +69,6 @@ public class BookSearchEndpointTests : IClassFixture<WebApplicationFactory<Progr
             Title = "Dune",
             Author = "Frank Herbert",
             Keywords = [],
-            Confidence = 0.85,
             Source = ExtractionSource.Deterministic,
             Explanation = "input clear enough for deterministic match",
             RawQuery = "Dune by Frank Herbert"
@@ -98,8 +97,7 @@ public class BookSearchEndpointTests : IClassFixture<WebApplicationFactory<Progr
                         TitleSimilarity = 1.0,
                         AuthorSimilarity = 1.0,
                         KeywordOverlap = 0.0,
-                        PopularityNorm = 1.0,
-                        ExtractionConfidence = 0.85
+                        PopularityNorm = 1.0
                     },
                     Explanation = "Title is a very close match; author is a very close match."
                 }
@@ -147,7 +145,6 @@ public class BookSearchEndpointTests : IClassFixture<WebApplicationFactory<Progr
                     Title = "Dune",
                     Author = null,
                     Keywords = [],
-                    Confidence = 0.85,
                     Source = ExtractionSource.Deterministic,
                     RawQuery = "Dune"
                 },

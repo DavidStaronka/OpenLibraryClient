@@ -25,7 +25,6 @@ public class RelevanceRankerTests
             Title = "Dune",
             Author = "Frank Herbert",
             Keywords = ["desert", "planet"],
-            Confidence = 0.85,
             Source = ExtractionSource.Deterministic,
             RawQuery = "Dune by Frank Herbert"
         };
@@ -50,7 +49,6 @@ public class RelevanceRankerTests
             Title = "Dune",
             Author = "Frank Herbert",
             Keywords = [],
-            Confidence = 0.85,
             Source = ExtractionSource.Deterministic,
             RawQuery = "Dune by Frank Herbert"
         };
@@ -76,7 +74,6 @@ public class RelevanceRankerTests
             Title = null,
             Author = null,
             Keywords = ["desert", "planet", "sci-fi"],
-            Confidence = 0.3,
             Source = ExtractionSource.Llm,
             RawQuery = "something about a desert planet sci-fi book"
         };
@@ -96,7 +93,6 @@ public class RelevanceRankerTests
     {
         var extraction = new ExtractionResult
         {
-            Confidence = 0.5,
             Source = ExtractionSource.Deterministic,
             RawQuery = "anything"
         };
@@ -114,7 +110,6 @@ public class RelevanceRankerTests
             Title = "Dune",
             Author = "Frank Herbert",
             Keywords = [],
-            Confidence = 0.85,
             Source = ExtractionSource.Deterministic,
             RawQuery = "Dune by Frank Herbert"
         };

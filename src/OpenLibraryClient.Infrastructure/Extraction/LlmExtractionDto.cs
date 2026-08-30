@@ -10,9 +10,6 @@ internal sealed class LlmExtractionDto
     public string? Author { get; set; }
     public List<string> Keywords { get; set; } = [];
 
-    /// <summary>The model's own 0.0-1.0 estimate of how confident it is in Title/Author.</summary>
-    public double Confidence { get; set; }
-
     /// <summary>A short, one-to-two sentence rationale for why the model extracted these fields.</summary>
     public string? Explanation { get; set; }
 }

@@ -12,7 +12,6 @@ public class RankingExplainerTests
         Title = title,
         Author = author,
         Keywords = [],
-        Confidence = 0.85,
         Source = ExtractionSource.Deterministic,
         RawQuery = "raw query"
     };
@@ -21,14 +20,12 @@ public class RankingExplainerTests
         double title = 0.0,
         double author = 0.0,
         double keyword = 0.0,
-        double popularity = 0.0,
-        double confidence = 0.85) => new()
+        double popularity = 0.0) => new()
     {
         TitleSimilarity = title,
         AuthorSimilarity = author,
         KeywordOverlap = keyword,
-        PopularityNorm = popularity,
-        ExtractionConfidence = confidence
+        PopularityNorm = popularity
     };
 
     [Fact]

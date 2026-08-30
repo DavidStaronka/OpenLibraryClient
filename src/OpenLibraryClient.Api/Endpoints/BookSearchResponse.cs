@@ -23,7 +23,6 @@ public sealed record ExtractionSummary
     public string? Title { get; init; }
     public string? Author { get; init; }
     public IReadOnlyList<string> Keywords { get; init; } = [];
-    public required double Confidence { get; init; }
     public required string Source { get; init; }
 
     public static ExtractionSummary From(ExtractionResult result) => new()
@@ -31,7 +30,6 @@ public sealed record ExtractionSummary
         Title = result.Title,
         Author = result.Author,
         Keywords = result.Keywords,
-        Confidence = result.Confidence,
         Source = result.Source.ToString()
     };
 }

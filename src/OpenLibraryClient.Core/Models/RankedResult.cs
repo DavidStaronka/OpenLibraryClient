@@ -11,9 +11,6 @@ public sealed record ScoreBreakdown
     public required double AuthorSimilarity { get; init; }
     public required double KeywordOverlap { get; init; }
     public required double PopularityNorm { get; init; }
-
-    /// <summary>The extraction confidence used to weight this candidate.</summary>
-    public required double ExtractionConfidence { get; init; }
 }
 
 /// <summary>An Open Library candidate paired with its computed relevance score.</summary>

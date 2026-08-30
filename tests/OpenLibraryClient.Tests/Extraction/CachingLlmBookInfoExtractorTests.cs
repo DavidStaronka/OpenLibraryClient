@@ -15,12 +15,12 @@ public class CachingLlmBookInfoExtractorTests
             cache ?? new MemoryCache(new MemoryCacheOptions()),
             Options.Create(new LlmCacheOptions { CacheDurationHours = 24 }));
 
-    private static ExtractionResult MakeResult(string rawQuery, double confidence = 0.9) => new()
+    private static ExtractionResult MakeResult(string rawQuery, bool isDegraded = false) => new()
     {
         Title = "Dune",
         Author = "Frank Herbert",
         Keywords = [],
-        Confidence = confidence,
+        IsDegraded = isDegraded,
         Source = ExtractionSource.Llm,
         Explanation = "explanation",
         RawQuery = rawQuery
@@ -59,11 +59,11 @@ public class CachingLlmBookInfoExtractorTests
     }
 
     [Fact]
-    public async Task ExtractAsync_ZeroConfidenceResult_IsNotCached()
+    public async Task ExtractAsync_DegradedResult_IsNotCached()
     {
         var inner = new Mock<ILlmBookInfoExtractor>();
         inner.Setup(e => e.ExtractAsync("flaky query", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakeResult("flaky query", confidence: 0.0));
+            .ReturnsAsync(MakeResult("flaky query", isDegraded: true));
 
         var extractor = CreateExtractor(inner);
 

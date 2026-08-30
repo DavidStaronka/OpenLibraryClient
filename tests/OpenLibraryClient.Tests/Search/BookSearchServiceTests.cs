@@ -19,22 +19,20 @@ public class BookSearchServiceTests
         public void Dispose() { }
     }
 
-    private static ExtractionResult Deterministic(string? title, string? author, string[]? keywords = null, string rawQuery = "raw query", double confidence = 0.85) => new()
+    private static ExtractionResult Deterministic(string? title, string? author, string[]? keywords = null, string rawQuery = "raw query") => new()
     {
         Title = title,
         Author = author,
         Keywords = keywords ?? [],
-        Confidence = confidence,
         Source = ExtractionSource.Deterministic,
         RawQuery = rawQuery
     };
 
-    private static ExtractionResult Llm(string? title, string? author, string[]? keywords = null, string rawQuery = "raw query", double confidence = 0.3) => new()
+    private static ExtractionResult Llm(string? title, string? author, string[]? keywords = null, string rawQuery = "raw query") => new()
     {
         Title = title,
         Author = author,
         Keywords = keywords ?? [],
-        Confidence = confidence,
         Source = ExtractionSource.Llm,
         RawQuery = rawQuery
     };
@@ -63,7 +61,7 @@ public class BookSearchServiceTests
                 {
                     Doc = d,
                     Score = 1.0,
-                    Breakdown = new ScoreBreakdown { TitleSimilarity = 1, AuthorSimilarity = 1, KeywordOverlap = 1, PopularityNorm = 1, ExtractionConfidence = 1 },
+                    Breakdown = new ScoreBreakdown { TitleSimilarity = 1, AuthorSimilarity = 1, KeywordOverlap = 1, PopularityNorm = 1 },
                     Explanation = "test explanation"
                 }).ToList());
 
@@ -116,7 +114,7 @@ public class BookSearchServiceTests
             {
                 Doc = partialMatchDoc,
                 Score = 0.7,
-                Breakdown = new ScoreBreakdown { TitleSimilarity = 1.0, AuthorSimilarity = 0.6, KeywordOverlap = 0, PopularityNorm = 0, ExtractionConfidence = 0.85 },
+                Breakdown = new ScoreBreakdown { TitleSimilarity = 1.0, AuthorSimilarity = 0.6, KeywordOverlap = 0, PopularityNorm = 0 },
                 Explanation = "partial match"
             }]);
         ranker
@@ -125,7 +123,7 @@ public class BookSearchServiceTests
             {
                 Doc = exactMatchDoc,
                 Score = 1.0,
-                Breakdown = new ScoreBreakdown { TitleSimilarity = 1.0, AuthorSimilarity = 1.0, KeywordOverlap = 0, PopularityNorm = 0, ExtractionConfidence = 0.3 },
+                Breakdown = new ScoreBreakdown { TitleSimilarity = 1.0, AuthorSimilarity = 1.0, KeywordOverlap = 0, PopularityNorm = 0 },
                 Explanation = "exact match"
             }]);
 
@@ -160,7 +158,7 @@ public class BookSearchServiceTests
             {
                 Doc = candidateDoc,
                 Score = 0.5,
-                Breakdown = new ScoreBreakdown { TitleSimilarity = 1.0, AuthorSimilarity = 0.3, KeywordOverlap = 0, PopularityNorm = 0, ExtractionConfidence = 0.85 },
+                Breakdown = new ScoreBreakdown { TitleSimilarity = 1.0, AuthorSimilarity = 0.3, KeywordOverlap = 0, PopularityNorm = 0 },
                 Explanation = "partial match"
             }]);
 

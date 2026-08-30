@@ -28,7 +28,7 @@ public sealed class CachingLlmBookInfoExtractor(
 
         var result = await innerExtractor.ExtractAsync(bookInfo, cancellationToken);
 
-        if (result.Confidence > 0.0)
+        if (!result.IsDegraded)
         {
             cache.Set(cacheKey, result, TimeSpan.FromHours(options.Value.CacheDurationHours));
         }

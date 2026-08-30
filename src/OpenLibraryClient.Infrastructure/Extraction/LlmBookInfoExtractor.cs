@@ -16,13 +16,14 @@ namespace OpenLibraryClient.Infrastructure.Extraction;
 /// supplied <paramref name="resiliencePipeline"/> (built in Program.cs from "Gemini:Resilience"
 /// configuration; defaults to no retry - e.g. in tests - when not supplied). On any failure that
 /// survives retries (network error, auth error, malformed response) this degrades gracefully to
-/// a zero-confidence empty result rather than throwing, so a flaky/unavailable LLM never crashes
-/// the search pipeline - BookSearchService's fallback chain simply moves on to the next query.
+/// an empty, <see cref="ExtractionResult.IsDegraded"/> result rather than throwing, so a
+/// flaky/unavailable LLM never crashes the search pipeline - BookSearchService's fallback chain
+/// simply moves on to the next query.
 ///
 /// When no real Gemini API key is configured (<paramref name="isConfigured"/> is false, computed
 /// in Program.cs from the same check used for its startup warning), calls are short-circuited
-/// before ever touching the (doomed-to-fail) chat client, and the resulting zero-confidence
-/// result carries a distinct explanation/metric reason ("not-configured") so this case is never
+/// before ever touching the (doomed-to-fail) chat client, and the resulting degraded result
+/// carries a distinct explanation/metric reason ("not-configured") so this case is never
 /// conflated with a genuine transient outage in logs/dashboards.
 /// </summary>
 public sealed class LlmBookInfoExtractor(
@@ -43,7 +44,6 @@ public sealed class LlmBookInfoExtractor(
         Rules:
         - If you cannot confidently identify a field, return null for it.
         - Correct obvious misspellings when identifying title/author (e.g. "Frnk Hrbert" becomes "Frank Herbert").
-        - "confidence" is your own 0.0-1.0 estimate of how sure you are about the extracted title/author.
         - "explanation" is a short, one-to-two sentence rationale for why you extracted these specific
           fields from the query (e.g. what in the text indicated the title vs. the author vs. keywords).
         - Do not invent information that isn't implied by the query.
@@ -61,7 +61,7 @@ public sealed class LlmBookInfoExtractor(
                 Title = null,
                 Author = null,
                 Keywords = [],
-                Confidence = 0.0,
+                IsDegraded = true,
                 Source = ExtractionSource.Llm,
                 Explanation = "LLM extraction skipped; no Gemini API key configured",
                 RawQuery = bookInfo
@@ -85,7 +85,7 @@ public sealed class LlmBookInfoExtractor(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "LLM extraction failed for query '{BookInfo}'; degrading to a zero-confidence result.", bookInfo);
+            logger.LogWarning(ex, "LLM extraction failed for query '{BookInfo}'; degrading to an empty result.", bookInfo);
             metrics?.RecordLlmExtractionOutcome("failure");
 
             return new ExtractionResult
@@ -93,9 +93,9 @@ public sealed class LlmBookInfoExtractor(
                 Title = null,
                 Author = null,
                 Keywords = [],
-                Confidence = 0.0,
+                IsDegraded = true,
                 Source = ExtractionSource.Llm,
-                Explanation = "LLM extraction failed; degraded to a zero-confidence result",
+                Explanation = "LLM extraction failed; degraded to an empty result",
                 RawQuery = bookInfo
             };
         }
@@ -121,7 +121,6 @@ public sealed class LlmBookInfoExtractor(
             .Distinct()
             .Take(MaxKeywords)
             .ToList(),
-        Confidence = Math.Clamp(dto.Confidence, 0.0, 1.0),
         Source = ExtractionSource.Llm,
         Explanation = TruncateOrNull(dto.Explanation),
         RawQuery = rawQuery

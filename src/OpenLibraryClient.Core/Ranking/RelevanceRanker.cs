@@ -8,20 +8,18 @@ namespace OpenLibraryClient.Core.Ranking;
 /// blends title/author similarity, keyword overlap, and popularity, weighted differently
 /// depending on how the extraction was produced:
 ///
-/// - Deterministic (high-confidence structured fields) -> weight title/author similarity heavily,
-///   since we trust the parsed title/author.
-/// - Llm (fallback, lower inherent confidence) -> weight keyword overlap and popularity more,
-///   since the parsed title/author itself is a guess and needs corroborating signal.
-///
-/// The extraction's own confidence score is also folded in directly as a ranking feature,
-/// reusing the same confidence-gate signal from extraction time.
+/// - Deterministic (an unambiguous separator was matched) -> weight title/author similarity
+///   heavily, since we trust the parsed title/author outright.
+/// - Llm (fallback, used precisely because the input was ambiguous) -> weight keyword overlap
+///   and popularity more, since the parsed title/author itself is a guess and needs
+///   corroborating signal.
 /// </summary>
 public sealed class RelevanceRanker(ISimilarityScorer similarityScorer, IRankingExplainer explainer) : IRelevanceRanker
 {
-    private readonly record struct Weights(double Title, double Author, double Keyword, double Popularity, double Confidence);
+    private readonly record struct Weights(double Title, double Author, double Keyword, double Popularity);
 
-    private static readonly Weights DeterministicWeights = new(Title: 0.35, Author: 0.30, Keyword: 0.15, Popularity: 0.10, Confidence: 0.10);
-    private static readonly Weights LlmWeights = new(Title: 0.20, Author: 0.15, Keyword: 0.30, Popularity: 0.20, Confidence: 0.15);
+    private static readonly Weights DeterministicWeights = new(Title: 0.40, Author: 0.35, Keyword: 0.15, Popularity: 0.10);
+    private static readonly Weights LlmWeights = new(Title: 0.25, Author: 0.20, Keyword: 0.35, Popularity: 0.20);
 
     public IReadOnlyList<RankedResult> Rank(ExtractionResult extraction, IReadOnlyList<OpenLibraryDoc> candidates)
     {
@@ -62,16 +60,14 @@ public sealed class RelevanceRanker(ISimilarityScorer similarityScorer, IRanking
             weights.Title * titleSimilarity +
             weights.Author * authorSimilarity +
             weights.Keyword * keywordOverlap +
-            weights.Popularity * popularityNorm +
-            weights.Confidence * extraction.Confidence;
+            weights.Popularity * popularityNorm;
 
         var breakdown = new ScoreBreakdown
         {
             TitleSimilarity = titleSimilarity,
             AuthorSimilarity = authorSimilarity,
             KeywordOverlap = keywordOverlap,
-            PopularityNorm = popularityNorm,
-            ExtractionConfidence = extraction.Confidence
+            PopularityNorm = popularityNorm
         };
 
         var isMostPopularInResults = maxEditionCount > 0 && doc.EditionCount == maxEditionCount;

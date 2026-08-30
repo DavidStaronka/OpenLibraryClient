@@ -13,7 +13,6 @@ public class OpenLibraryQueryBuilderTests
             Title = "Dune",
             Author = "Frank Herbert",
             Keywords = ["desert"],
-            Confidence = 0.85,
             Source = ExtractionSource.Deterministic,
             RawQuery = "Dune by Frank Herbert"
         };
@@ -29,7 +28,6 @@ public class OpenLibraryQueryBuilderTests
             Title = null,
             Author = null,
             Keywords = ["desert", "planet"],
-            Confidence = 0.2,
             Source = ExtractionSource.Deterministic,
             RawQuery = "something about a desert planet"
         };
@@ -45,7 +43,6 @@ public class OpenLibraryQueryBuilderTests
             Title = null,
             Author = null,
             Keywords = [],
-            Confidence = 0.1,
             Source = ExtractionSource.Deterministic,
             RawQuery = "totally unstructured text"
         };
@@ -59,7 +56,6 @@ public class OpenLibraryQueryBuilderTests
         var extraction = new ExtractionResult
         {
             Title = null,
-            Confidence = 0.5,
             Source = ExtractionSource.Deterministic,
             RawQuery = "x"
         };
@@ -73,7 +69,6 @@ public class OpenLibraryQueryBuilderTests
         var extraction = new ExtractionResult
         {
             Keywords = [],
-            Confidence = 0.5,
             Source = ExtractionSource.Deterministic,
             RawQuery = "x"
         };

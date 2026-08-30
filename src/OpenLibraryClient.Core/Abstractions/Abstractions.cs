@@ -4,8 +4,9 @@ namespace OpenLibraryClient.Core.Abstractions;
 
 /// <summary>
 /// Pure, deterministic, no-I/O parsing of a messy "bookInfo" string using regex separators
-/// and fuzzy string matching. Returns a best-effort result with a confidence score; callers
-/// decide whether that confidence is high enough to skip the LLM fallback.
+/// and fuzzy string matching. Only recognizes unambiguous separators, so a structured result
+/// (title/author both populated) is always trustworthy; anything else falls back to an
+/// unstructured keyword bag for the LLM to interpret instead.
 /// </summary>
 public interface IDeterministicParser
 {
@@ -13,9 +14,9 @@ public interface IDeterministicParser
 }
 
 /// <summary>
-/// LLM-backed extraction used as a fallback when the deterministic parser's confidence is too
-/// low. Implementations should request structured JSON output matching ExtractionResult's shape
-/// and treat the model's output as best-effort, not ground truth.
+/// LLM-backed extraction used as a fallback when the deterministic parser couldn't identify a
+/// title/author at all. Implementations should request structured JSON output matching
+/// ExtractionResult's shape and treat the model's output as best-effort, not ground truth.
 /// </summary>
 public interface ILlmBookInfoExtractor
 {
@@ -23,9 +24,8 @@ public interface ILlmBookInfoExtractor
 }
 
 /// <summary>
-/// Composes <see cref="IDeterministicParser"/> and <see cref="ILlmBookInfoExtractor"/> behind the
-/// confidence-gate policy: try deterministic first, only fall back to the LLM when deterministic
-/// confidence is below the configured threshold.
+/// Composes <see cref="IDeterministicParser"/> and <see cref="ILlmBookInfoExtractor"/>: try
+/// deterministic first, only fall back to the LLM when it couldn't identify a title/author.
 /// </summary>
 public interface IBookInfoExtractor
 {

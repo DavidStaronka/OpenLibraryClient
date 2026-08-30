@@ -20,33 +20,32 @@ public class DeterministicParserTests
         Assert.Equal(expectedTitle, result.Title);
         Assert.Equal(expectedAuthor, result.Author);
         Assert.Equal(ExtractionSource.Deterministic, result.Source);
-        Assert.True(result.Confidence > 0.5);
+        Assert.True(result.HasTitleOrAuthor);
         Assert.Equal("input clear enough for deterministic match", result.Explanation);
     }
 
-    [Theory]
-    [InlineData("\"Title\" by Author", 0.95)]
-    [InlineData("Title by Author", 0.85)]
-    [InlineData("Title (Author)", 0.80)]
-    [InlineData("Title - Author", 0.75)]
-    [InlineData("Title, Author", 0.55)]
-    public void Parse_DifferentSeparatorStyles_YieldExpectedConfidence(string input, double expectedConfidence)
-    {
-        var result = _parser.Parse(input);
-
-        Assert.Equal(expectedConfidence, result.Confidence, precision: 2);
-    }
-
     [Fact]
-    public void Parse_NoRecognizableSeparator_ReturnsLowConfidenceKeywordBag()
+    public void Parse_NoRecognizableSeparator_ReturnsUnstructuredKeywordBag()
     {
         var result = _parser.Parse("something about space wizards maybe herbert dune");
 
         Assert.Null(result.Title);
         Assert.Null(result.Author);
-        Assert.True(result.Confidence <= 0.3);
+        Assert.False(result.HasTitleOrAuthor);
         Assert.NotEmpty(result.Keywords);
         Assert.NotNull(result.Explanation);
+    }
+
+    [Fact]
+    public void Parse_BareCommaSeparator_IsAmbiguousAndTreatedAsKeywordBag()
+    {
+        // Comma order between title/author is ambiguous, so it's deliberately not recognized as
+        // a structured separator; it should fall through to the unstructured keyword bag.
+        var result = _parser.Parse("Title, Author");
+
+        Assert.Null(result.Title);
+        Assert.Null(result.Author);
+        Assert.False(result.HasTitleOrAuthor);
     }
 
     [Fact]
@@ -75,13 +74,13 @@ public class DeterministicParserTests
     }
 
     [Fact]
-    public void Parse_EmptyInput_ReturnsLowConfidenceResultWithoutThrowing()
+    public void Parse_EmptyInput_ReturnsUnstructuredResultWithoutThrowing()
     {
         var result = _parser.Parse("   ");
 
         Assert.Null(result.Title);
         Assert.Null(result.Author);
-        Assert.True(result.Confidence <= 0.3);
+        Assert.False(result.HasTitleOrAuthor);
     }
 
     [Fact]

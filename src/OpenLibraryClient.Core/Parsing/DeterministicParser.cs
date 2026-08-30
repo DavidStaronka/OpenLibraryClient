@@ -5,10 +5,12 @@ using OpenLibraryClient.Core.Models;
 namespace OpenLibraryClient.Core.Parsing;
 
 /// <summary>
-/// Parses messy "bookInfo" strings using ordered regex patterns for common separators
-/// (quoted titles, "by", hyphen, parentheses, comma). Each pattern carries a fixed confidence
-/// score reflecting how unambiguous that separator style is. Falls back to treating the whole
-/// string as an unstructured keyword bag when no separator is recognized.
+/// Parses messy "bookInfo" strings using ordered regex patterns for common, unambiguous
+/// separators (quoted titles, "by", parentheses, hyphen). Falls back to treating the whole
+/// string as an unstructured keyword bag when none of them match - including for inputs whose
+/// only separator is a bare comma, which is deliberately not recognized here since comma order
+/// between title and author is ambiguous (e.g. "Dune, Frank Herbert" vs. "Herbert, Frank" as a
+/// surname-first author listing) and not worth guessing at deterministically.
 ///
 /// This is intentionally pure/no-I/O: it does not call Open Library or an LLM. Verification
 /// against real Open Library data happens later, in the ranking stage.
@@ -21,32 +23,31 @@ public sealed class DeterministicParser : IDeterministicParser
         "and", "or", "of", "in", "on", "with", "about"
     ];
 
-    // Ordered highest-confidence-first. Named groups: title, author.
-    private static readonly (Regex Pattern, double Confidence)[] Patterns =
+    // Named groups: title, author. Only unambiguous separators appear here - a match against any
+    // of these is trusted outright (see IBookInfoExtractor), so anything weaker (e.g. a bare
+    // comma) is deliberately left out and handled by the unstructured-keyword-bag fallback below.
+    private static readonly Regex[] Patterns =
     [
         // "Title" by Author  /  'Title' by Author
         // Author capture stops at a comma so trailing free text (e.g. ", sci-fi desert planet")
         // is left in the remainder for ExtractKeywords rather than being swallowed as part of the name.
-        (new Regex(@"^[""'](?<title>[^""']+)[""']\s*(?:by)\s*(?<author>[^,]+)", RegexOptions.IgnoreCase), 0.95),
+        new(@"^[""'](?<title>[^""']+)[""']\s*(?:by)\s*(?<author>[^,]+)", RegexOptions.IgnoreCase),
 
         // Title by Author
-        (new Regex(@"^(?<title>.+?)\s+by\s+(?<author>[^,]+)", RegexOptions.IgnoreCase), 0.85),
+        new(@"^(?<title>.+?)\s+by\s+(?<author>[^,]+)", RegexOptions.IgnoreCase),
 
         // Title (Author)
-        (new Regex(@"^(?<title>.+?)\s*\((?<author>[^)]+)\)\s*$", RegexOptions.IgnoreCase), 0.80),
+        new(@"^(?<title>.+?)\s*\((?<author>[^)]+)\)\s*$", RegexOptions.IgnoreCase),
 
         // Title - Author  /  Title – Author  /  Title — Author
-        (new Regex(@"^(?<title>.+?)\s*[-–—]\s*(?<author>.+)$", RegexOptions.IgnoreCase), 0.75),
-
-        // Title, Author (weak: comma order between title/author is ambiguous)
-        (new Regex(@"^(?<title>.+?)\s*,\s*(?<author>.+)$", RegexOptions.IgnoreCase), 0.55),
+        new(@"^(?<title>.+?)\s*[-–—]\s*(?<author>.+)$", RegexOptions.IgnoreCase),
     ];
 
     public ExtractionResult Parse(string bookInfo)
     {
         var normalized = Normalize(bookInfo);
 
-        foreach (var (pattern, confidence) in Patterns)
+        foreach (var pattern in Patterns)
         {
             var match = pattern.Match(normalized);
             if (!match.Success)
@@ -69,7 +70,6 @@ public sealed class DeterministicParser : IDeterministicParser
                 Title = title,
                 Author = author,
                 Keywords = keywords,
-                Confidence = confidence,
                 Source = ExtractionSource.Deterministic,
                 Explanation = "input clear enough for deterministic match",
                 RawQuery = bookInfo
@@ -83,7 +83,6 @@ public sealed class DeterministicParser : IDeterministicParser
             Title = null,
             Author = null,
             Keywords = fallbackKeywords,
-            Confidence = 0.2,
             Source = ExtractionSource.Deterministic,
             Explanation = "input did not match a recognizable pattern; treated as an unstructured keyword search",
             RawQuery = bookInfo

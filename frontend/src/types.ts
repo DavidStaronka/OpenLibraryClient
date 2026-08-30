@@ -11,7 +11,6 @@ export interface ExtractionSummary {
   title: string | null;
   author: string | null;
   keywords: string[];
-  confidence: number;
   source: string;
 }
 
@@ -35,5 +34,4 @@ export interface ScoreBreakdown {
   authorSimilarity: number;
   keywordOverlap: number;
   popularityNorm: number;
-  extractionConfidence: number;
 }

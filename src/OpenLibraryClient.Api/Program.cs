@@ -1,8 +1,12 @@
 using System.ClientModel;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using OpenAI;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
+using Polly;
+using Polly.Retry;
 using OpenLibraryClient.Api.Endpoints;
 using OpenLibraryClient.Core.Abstractions;
 using OpenLibraryClient.Core.Parsing;
@@ -62,7 +66,41 @@ builder.Services.AddSingleton<IChatClient>(_ =>
         new OpenAIClientOptions { Endpoint = new Uri("https://generativelanguage.googleapis.com/v1beta/openai/") })
     .AsIChatClient());
 
-builder.Services.AddSingleton<ILlmBookInfoExtractor, LlmBookInfoExtractor>();
+// In-process cache backing both the Open Library and Gemini caching decorators below.
+builder.Services.AddMemoryCache();
+
+builder.Services.Configure<OpenLibraryCacheOptions>(builder.Configuration.GetSection("OpenLibrary"));
+builder.Services.Configure<LlmCacheOptions>(builder.Configuration.GetSection("Gemini"));
+builder.Services.Configure<GeminiResilienceOptions>(builder.Configuration.GetSection("Gemini:Resilience"));
+
+// Retry/timeout pipeline for Gemini calls: transient failures (timeouts, 429, 5xx) are retried a
+// bounded number of times with exponential backoff before LlmBookInfoExtractor's own catch-all
+// degrades to a zero-confidence result. Built eagerly from configuration rather than per-request.
+var geminiResilienceOptions = builder.Configuration.GetSection("Gemini:Resilience").Get<GeminiResilienceOptions>()
+    ?? new GeminiResilienceOptions();
+builder.Services.AddSingleton(new ResiliencePipelineBuilder()
+    .AddRetry(new RetryStrategyOptions
+    {
+        MaxRetryAttempts = geminiResilienceOptions.MaxRetryAttempts,
+        BackoffType = DelayBackoffType.Exponential,
+        Delay = TimeSpan.FromMilliseconds(300),
+        UseJitter = true,
+        ShouldHandle = new PredicateBuilder()
+            .Handle<HttpRequestException>()
+            .Handle<TaskCanceledException>()
+            .Handle<ClientResultException>(ex => ex.Status == 429 || ex.Status >= 500)
+    })
+    .AddTimeout(TimeSpan.FromSeconds(geminiResilienceOptions.TimeoutSeconds))
+    .Build());
+
+// Real LLM extractor registered under its concrete type so the caching decorator below can wrap
+// it; ILlmBookInfoExtractor (what BookSearchService/BookInfoExtractor depend on) resolves to the
+// cached decorator.
+builder.Services.AddSingleton<LlmBookInfoExtractor>();
+builder.Services.AddSingleton<ILlmBookInfoExtractor>(sp => new CachingLlmBookInfoExtractor(
+    sp.GetRequiredService<LlmBookInfoExtractor>(),
+    sp.GetRequiredService<IMemoryCache>(),
+    sp.GetRequiredService<IOptions<LlmCacheOptions>>()));
 
 // Composes deterministic + LLM behind the confidence gate.
 builder.Services.AddSingleton<IBookInfoExtractor, BookInfoExtractor>();
@@ -70,12 +108,22 @@ builder.Services.AddSingleton<IBookInfoExtractor, BookInfoExtractor>();
 // Orchestrates extraction -> Open Library query (with zero-result relaxation/retry) -> ranking.
 builder.Services.AddSingleton<IBookSearchService, BookSearchService>();
 
-// Open Library HTTP client.
-builder.Services.AddHttpClient<IOpenLibraryClient, OpenLibraryApiClient>(client =>
+// Open Library HTTP client, registered under its concrete type so the caching decorator below
+// can wrap it. AddStandardResilienceHandler adds retry (transient 5xx/408/429/network errors,
+// exponential backoff+jitter), per-attempt timeout, total-request timeout, and a circuit breaker,
+// all configurable via the "OpenLibrary:Resilience" configuration section.
+builder.Services.AddHttpClient<OpenLibraryApiClient>(client =>
 {
     client.BaseAddress = new Uri("https://openlibrary.org/");
     client.DefaultRequestHeaders.UserAgent.ParseAdd("OpenLibraryClient/1.0 (https://github.com/openlibraryclient)");
-});
+})
+    .AddStandardResilienceHandler(options => builder.Configuration.GetSection("OpenLibrary:Resilience").Bind(options));
+
+// IOpenLibraryClient (what BookSearchService depends on) resolves to the caching decorator.
+builder.Services.AddSingleton<IOpenLibraryClient>(sp => new CachingOpenLibraryClient(
+    sp.GetRequiredService<OpenLibraryApiClient>(),
+    sp.GetRequiredService<IMemoryCache>(),
+    sp.GetRequiredService<IOptions<OpenLibraryCacheOptions>>()));
 
 builder.Services.AddProblemDetails();
 

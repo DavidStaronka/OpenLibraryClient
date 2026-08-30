@@ -2,6 +2,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using OpenLibraryClient.Core.Abstractions;
 using OpenLibraryClient.Core.Models;
+using Polly;
 
 namespace OpenLibraryClient.Infrastructure.Extraction;
 
@@ -10,12 +11,20 @@ namespace OpenLibraryClient.Infrastructure.Extraction;
 /// structured JSON output (constrained to LlmExtractionDto's shape), so the model's response
 /// always deserializes cleanly rather than requiring free-text JSON parsing.
 ///
-/// On any failure (network error, auth error, malformed response) this degrades gracefully to a
-/// zero-confidence empty result rather than throwing, so a flaky/unavailable LLM never crashes
+/// Transient failures (timeouts, 429, 5xx) are retried a bounded number of times via the
+/// supplied <paramref name="resiliencePipeline"/> (built in Program.cs from "Gemini:Resilience"
+/// configuration; defaults to no retry - e.g. in tests - when not supplied). On any failure that
+/// survives retries (network error, auth error, malformed response) this degrades gracefully to
+/// a zero-confidence empty result rather than throwing, so a flaky/unavailable LLM never crashes
 /// the search pipeline - BookSearchService's fallback chain simply moves on to the next query.
 /// </summary>
-public sealed class LlmBookInfoExtractor(IChatClient chatClient, ILogger<LlmBookInfoExtractor> logger) : ILlmBookInfoExtractor
+public sealed class LlmBookInfoExtractor(
+    IChatClient chatClient,
+    ILogger<LlmBookInfoExtractor> logger,
+    ResiliencePipeline? resiliencePipeline = null) : ILlmBookInfoExtractor
 {
+    private readonly ResiliencePipeline _resiliencePipeline = resiliencePipeline ?? ResiliencePipeline.Empty;
+
     private const string SystemPrompt = """
         You are an expert librarian assistant. Extract structured book information from a messy,
         free-text user query that may contain misspellings, poor formatting, or irrelevant words.
@@ -41,7 +50,9 @@ public sealed class LlmBookInfoExtractor(IChatClient chatClient, ILogger<LlmBook
                 new(ChatRole.User, bookInfo)
             ];
 
-            var response = await chatClient.GetResponseAsync<LlmExtractionDto>(messages, cancellationToken: cancellationToken);
+            var response = await _resiliencePipeline.ExecuteAsync(
+                async ct => await chatClient.GetResponseAsync<LlmExtractionDto>(messages, cancellationToken: ct),
+                cancellationToken);
 
             return MapToExtractionResult(response.Result, bookInfo);
         }

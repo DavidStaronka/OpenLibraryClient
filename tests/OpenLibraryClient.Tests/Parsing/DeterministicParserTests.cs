@@ -61,6 +61,20 @@ public class DeterministicParserTests
     }
 
     [Fact]
+    public void Parse_ShortTitleIsSubstringOfUnrelatedWord_DoesNotCorruptKeywords()
+    {
+        // "It" (title) is a substring of "Italian" in the remainder; a naive substring replace
+        // would strip "It" out of "Italian" too, leaving a mangled "alian" keyword. Word-boundary
+        // removal should leave "italian" intact instead.
+        var result = _parser.Parse("It by Stephen King, Italian edition");
+
+        Assert.Equal("It", result.Title);
+        Assert.Equal("Stephen King", result.Author);
+        Assert.Contains("italian", result.Keywords);
+        Assert.DoesNotContain("alian", result.Keywords);
+    }
+
+    [Fact]
     public void Parse_EmptyInput_ReturnsLowConfidenceResultWithoutThrowing()
     {
         var result = _parser.Parse("   ");

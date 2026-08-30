@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using OpenLibraryClient.Api.Endpoints;
@@ -131,5 +132,48 @@ public class BookSearchEndpointTests : IClassFixture<WebApplicationFactory<Progr
         Assert.Equal("/works/OL1", body.Results[0].Key);
         Assert.Equal("Title is a very close match; author is a very close match.", body.Results[0].Explanation);
         Assert.Equal(["Dune Frank Herbert"], body.QueriesAttempted);
+    }
+
+    [Fact]
+    public async Task Search_ExceedsRateLimit_ReturnsTooManyRequests()
+    {
+        var mockSearchService = new Mock<IBookSearchService>();
+        mockSearchService
+            .Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BookSearchResult
+            {
+                Extraction = new ExtractionResult
+                {
+                    Title = "Dune",
+                    Author = null,
+                    Keywords = [],
+                    Confidence = 0.85,
+                    Source = ExtractionSource.Deterministic,
+                    RawQuery = "Dune"
+                },
+                Results = [],
+                QueriesAttempted = ["Dune"]
+            });
+
+        var client = _factory.WithWebHostBuilder(builder =>
+        {
+            // Tight limit so the test can trip it deterministically without many requests.
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["RateLimiting:PermitLimit"] = "1",
+                ["RateLimiting:WindowSeconds"] = "60",
+                ["RateLimiting:QueueLimit"] = "0"
+            }));
+            builder.ConfigureServices(services =>
+            {
+                services.AddSingleton(mockSearchService.Object);
+            });
+        }).CreateClient();
+
+        var first = await client.GetAsync("/api/books/search?bookInfo=Dune");
+        var second = await client.GetAsync("/api/books/search?bookInfo=Dune");
+
+        Assert.NotEqual(HttpStatusCode.TooManyRequests, first.StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, second.StatusCode);
     }
 }

@@ -14,10 +14,18 @@ public static class BookSearchEndpoint
     /// </summary>
     public const int MaxBookInfoLength = 300;
 
+    /// <summary>
+    /// Name of the rate limiter policy (registered in Program.cs via AddRateLimiter) applied to
+    /// this endpoint - each search can trigger a billable/rate-limited LLM call, so this guards
+    /// against a single client driving unbounded cost or hammering the upstream services.
+    /// </summary>
+    public const string RateLimitPolicyName = "SearchPolicy";
+
     public static IEndpointRouteBuilder MapBookSearch(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/books/search", HandleAsync)
-            .WithName("SearchBooks");
+            .WithName("SearchBooks")
+            .RequireRateLimiting(RateLimitPolicyName);
 
         return app;
     }

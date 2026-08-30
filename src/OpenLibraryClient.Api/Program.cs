@@ -1,12 +1,17 @@
 using System.ClientModel;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenAI;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using Polly;
 using Polly.Retry;
+using OpenLibraryClient.Api;
 using OpenLibraryClient.Api.Endpoints;
 using OpenLibraryClient.Core.Abstractions;
 using OpenLibraryClient.Core.Parsing;
@@ -31,11 +36,49 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod());
 });
 
+// Per-client-IP fixed-window rate limiting for the search endpoint: each search can trigger a
+// billable/rate-limited Gemini call, so this bounds the cost/abuse surface of an
+// unauthenticated public endpoint. Limits are configurable via the "RateLimiting" section.
+builder.Services.Configure<RateLimitingOptions>(builder.Configuration.GetSection("RateLimiting"));
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.ContentType = "application/problem+json";
+        await context.HttpContext.Response.WriteAsJsonAsync(new
+        {
+            title = "Too many requests.",
+            detail = "Rate limit exceeded for book search. Please slow down and try again shortly.",
+            status = StatusCodes.Status429TooManyRequests
+        }, cancellationToken);
+    };
+
+    // Resolved per-request (rather than captured once at startup) so configuration changes
+    // (including test overrides via WebApplicationFactory) are honored correctly.
+    options.AddPolicy(BookSearchEndpoint.RateLimitPolicyName, httpContext =>
+    {
+        var rateLimitingOptions = httpContext.RequestServices.GetRequiredService<IOptions<RateLimitingOptions>>().Value;
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = rateLimitingOptions.PermitLimit,
+                Window = TimeSpan.FromSeconds(rateLimitingOptions.WindowSeconds),
+                QueueLimit = rateLimitingOptions.QueueLimit,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            });
+    });
+});
+
 // Core pipeline pieces: deterministic parsing, similarity scoring, and ranking are pure/no-I/O.
 builder.Services.AddSingleton<IDeterministicParser, DeterministicParser>();
 builder.Services.AddSingleton<ISimilarityScorer, SimilarityScorer>();
 builder.Services.AddSingleton<IRankingExplainer, RankingExplainer>();
 builder.Services.AddSingleton<IRelevanceRanker, RelevanceRanker>();
+
 
 // LLM fallback extractor: Google Gemini (free tier, no billing required) via its OpenAI-compatible
 // endpoint, consumed through Microsoft.Extensions.AI's provider-agnostic IChatClient. Because the
@@ -95,8 +138,15 @@ builder.Services.AddSingleton(new ResiliencePipelineBuilder()
 
 // Real LLM extractor registered under its concrete type so the caching decorator below can wrap
 // it; ILlmBookInfoExtractor (what BookSearchService/BookInfoExtractor depend on) resolves to the
-// cached decorator.
-builder.Services.AddSingleton<LlmBookInfoExtractor>();
+// cached decorator. isConfigured mirrors the check above so a missing API key short-circuits
+// (and is reported distinctly via BookSearchMetrics) rather than attempting a doomed HTTP call.
+var geminiIsConfigured = geminiApiKey != "unconfigured";
+builder.Services.AddSingleton(sp => new LlmBookInfoExtractor(
+    sp.GetRequiredService<IChatClient>(),
+    sp.GetRequiredService<ILogger<LlmBookInfoExtractor>>(),
+    sp.GetRequiredService<ResiliencePipeline>(),
+    geminiIsConfigured,
+    sp.GetRequiredService<BookSearchMetrics>()));
 builder.Services.AddSingleton<ILlmBookInfoExtractor>(sp => new CachingLlmBookInfoExtractor(
     sp.GetRequiredService<LlmBookInfoExtractor>(),
     sp.GetRequiredService<IMemoryCache>(),
@@ -169,6 +219,8 @@ app.UseExceptionHandler(exceptionApp => exceptionApp.Run(async context =>
 }));
 
 app.UseCors(FrontendDevCorsPolicy);
+
+app.UseRateLimiter();
 
 // Skip the http->https redirect in Development: it forces a cross-port redirect to the ASP.NET
 // dev certificate, which browsers other than the one used for `dotnet dev-certs https --trust`

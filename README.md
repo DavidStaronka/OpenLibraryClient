@@ -40,6 +40,11 @@ dotnet user-secrets set "Gemini:ApiKey" "<your-key>"
 or set the `GEMINI_API_KEY` environment variable instead. If neither is set, the app still
 starts (a warning is logged), and LLM calls simply fail gracefully at request time.
 
+**Rate limiting**: `GET /api/books/search` is rate-limited per client IP (fixed window, 20
+requests/60s by default) since each search can trigger a billable Gemini call. Requests beyond
+the limit get a `429 Too Many Requests` response. Configurable via the `RateLimiting` section in
+`appsettings.json` (`PermitLimit`, `WindowSeconds`, `QueueLimit`).
+
 ### 2. Frontend
 
 ```powershell
@@ -86,6 +91,7 @@ dotnet test tests\OpenLibraryClient.Tests\OpenLibraryClient.Tests.csproj
 
 ```powershell
 cd frontend
-npm run build   # tsc -b && vite build
+npm test         # vitest run
+npm run build    # tsc -b && vite build
 npm run lint     # oxlint
 ```

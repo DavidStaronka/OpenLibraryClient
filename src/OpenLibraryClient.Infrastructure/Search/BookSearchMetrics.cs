@@ -24,6 +24,7 @@ public sealed class BookSearchMetrics : IDisposable
     private readonly Counter<long> _llmFallback;
     private readonly Histogram<long> _queriesAttempted;
     private readonly Histogram<long> _resultsCount;
+    private readonly Counter<long> _llmExtractionOutcome;
 
     public BookSearchMetrics(IMeterFactory meterFactory)
     {
@@ -53,6 +54,11 @@ public sealed class BookSearchMetrics : IDisposable
         _resultsCount = _meter.CreateHistogram<long>(
             "book_search.results_count",
             description: "Number of ranked results ultimately returned per search (0 indicates a dead-end search).");
+
+        _llmExtractionOutcome = _meter.CreateCounter<long>(
+            "book_search.llm_extraction_outcome",
+            description: "Outcome of each LLM extraction attempt: success, failure (transient error survived retries), " +
+                "or not-configured (no Gemini API key set) - lets dashboards distinguish misconfiguration from a genuine outage.");
     }
 
     public void RecordSuccess(BookSearchResult result, TimeSpan elapsed)
@@ -73,6 +79,10 @@ public sealed class BookSearchMetrics : IDisposable
     /// <summary>Records that a deterministic extraction wasn't trusted as-is and the LLM was consulted for a second opinion.</summary>
     public void RecordLlmFallback(string reason) =>
         _llmFallback.Add(1, new KeyValuePair<string, object?>("reason", reason));
+
+    /// <summary>Records the outcome of a single LLM extraction attempt: "success", "failure", or "not-configured".</summary>
+    public void RecordLlmExtractionOutcome(string outcome) =>
+        _llmExtractionOutcome.Add(1, new KeyValuePair<string, object?>("outcome", outcome));
 
     public void Dispose() => _meter.Dispose();
 }

@@ -122,6 +122,27 @@ public class LlmBookInfoExtractorTests
         chatClient.Verify(c => c.GetResponseAsync(It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task ExtractAsync_NotConfigured_SkipsChatClientAndReturnsZeroConfidenceResult()
+    {
+        var chatClient = new Mock<IChatClient>();
+
+        var extractor = new LlmBookInfoExtractor(
+            chatClient.Object,
+            NullLogger<LlmBookInfoExtractor>.Instance,
+            resiliencePipeline: null,
+            isConfigured: false);
+
+        var result = await extractor.ExtractAsync("dune by frank herbert");
+
+        Assert.Null(result.Title);
+        Assert.Null(result.Author);
+        Assert.Equal(0.0, result.Confidence);
+        Assert.Equal(ExtractionSource.Llm, result.Source);
+        Assert.Contains("no gemini api key configured", result.Explanation, StringComparison.OrdinalIgnoreCase);
+        chatClient.Verify(c => c.GetResponseAsync(It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Theory]
     [InlineData("", null)]
     [InlineData("   ", null)]
@@ -163,6 +184,44 @@ public class LlmBookInfoExtractorTests
         var result = LlmBookInfoExtractor.MapToExtractionResult(dto, "raw");
 
         Assert.Equal(["desert", "planet"], result.Keywords);
+    }
+
+    [Fact]
+    public void MapToExtractionResult_TruncatesOverlyLongTitleAuthorAndExplanation()
+    {
+        var longValue = new string('a', 500);
+        var dto = new LlmExtractionDto
+        {
+            Title = longValue,
+            Author = longValue,
+            Keywords = [],
+            Confidence = 0.5,
+            Explanation = longValue
+        };
+
+        var result = LlmBookInfoExtractor.MapToExtractionResult(dto, "raw");
+
+        Assert.Equal(LlmBookInfoExtractor.MaxFieldLength, result.Title!.Length);
+        Assert.Equal(LlmBookInfoExtractor.MaxFieldLength, result.Author!.Length);
+        Assert.Equal(LlmBookInfoExtractor.MaxFieldLength, result.Explanation!.Length);
+    }
+
+    [Fact]
+    public void MapToExtractionResult_CapsKeywordCountAndTruncatesOverlyLongKeywords()
+    {
+        var manyKeywords = Enumerable.Range(0, 50).Select(i => $"keyword{i}").ToList();
+        var dto = new LlmExtractionDto
+        {
+            Title = null,
+            Author = null,
+            Keywords = [.. manyKeywords, new string('b', 500)],
+            Confidence = 0.5
+        };
+
+        var result = LlmBookInfoExtractor.MapToExtractionResult(dto, "raw");
+
+        Assert.Equal(LlmBookInfoExtractor.MaxKeywords, result.Keywords.Count);
+        Assert.All(result.Keywords, k => Assert.True(k.Length <= LlmBookInfoExtractor.MaxFieldLength));
     }
 
     [Theory]

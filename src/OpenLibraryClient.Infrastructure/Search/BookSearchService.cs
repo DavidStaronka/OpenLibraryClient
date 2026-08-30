@@ -76,49 +76,72 @@ public sealed class BookSearchService(
             candidates = await TryAttemptAsync(OpenLibraryQueryBuilder.BuildTitleOnly(extraction));
         }
 
-        if (extraction.Source == ExtractionSource.Deterministic && !HasValidatedMatch(extraction, candidates))
+        // Ranking the deterministic candidates against `extraction` is only ever needed once, to
+        // decide whether the match is trustworthy (see HasValidatedMatch). Cached here so it can
+        // be reused for the final response below instead of re-ranking the same
+        // (extraction, candidates) pair a second time when nothing changes afterward.
+        IReadOnlyList<RankedResult>? reusableRanked = null;
+
+        if (extraction.Source == ExtractionSource.Deterministic)
         {
-            metrics.RecordLlmFallback(candidates.Count == 0 ? "zero-results" : "unvalidated-match");
+            var isValidated = HasValidatedMatch(extraction, candidates, out var rankedCandidates);
 
-            var llmExtraction = await llmExtractor.ExtractAsync(bookInfo, cancellationToken);
-            var llmCandidates = await TryAttemptAsync(OpenLibraryQueryBuilder.Build(llmExtraction));
+            if (isValidated)
+            {
+                reusableRanked = rankedCandidates;
+            }
+            else
+            {
+                metrics.RecordLlmFallback(candidates.Count == 0 ? "zero-results" : "unvalidated-match");
 
-            if (llmCandidates.Count == 0 &&
-                !string.IsNullOrWhiteSpace(llmExtraction.Title) &&
-                !string.IsNullOrWhiteSpace(llmExtraction.Author))
-            {
-                llmCandidates = await TryAttemptAsync(OpenLibraryQueryBuilder.BuildTitleOnly(llmExtraction));
-            }
+                var llmExtraction = await llmExtractor.ExtractAsync(bookInfo, cancellationToken);
+                var llmCandidates = await TryAttemptAsync(OpenLibraryQueryBuilder.Build(llmExtraction));
 
-            if (llmCandidates.Count > 0)
-            {
-                // The LLM found something where the deterministic parse either found nothing or
-                // couldn't be validated - trust the LLM's results over the unvalidated ones.
-                activeExtraction = llmExtraction;
-                candidates = llmCandidates;
+                if (llmCandidates.Count == 0 &&
+                    !string.IsNullOrWhiteSpace(llmExtraction.Title) &&
+                    !string.IsNullOrWhiteSpace(llmExtraction.Author))
+                {
+                    llmCandidates = await TryAttemptAsync(OpenLibraryQueryBuilder.BuildTitleOnly(llmExtraction));
+                }
+
+                if (llmCandidates.Count > 0)
+                {
+                    // The LLM found something where the deterministic parse either found nothing
+                    // or couldn't be validated - trust the LLM's results over the unvalidated ones.
+                    activeExtraction = llmExtraction;
+                    candidates = llmCandidates;
+                }
+                else if (candidates.Count == 0)
+                {
+                    // Neither attempt found anything yet. Keep going with the LLM's (usually more
+                    // accurate) title/author/keywords for the remaining relaxation steps below.
+                    activeExtraction = llmExtraction;
+                }
+                else
+                {
+                    // The deterministic attempt found unvalidated candidates and the LLM found
+                    // nothing at all - keep the deterministic candidates as the best available
+                    // guess rather than discarding them for an empty LLM result. activeExtraction
+                    // and candidates are unchanged from the validation ranking above, so that
+                    // ranking is still reusable for the final response.
+                    reusableRanked = rankedCandidates;
+                }
             }
-            else if (candidates.Count == 0)
-            {
-                // Neither attempt found anything yet. Keep going with the LLM's (usually more
-                // accurate) title/author/keywords for the remaining relaxation steps below.
-                activeExtraction = llmExtraction;
-            }
-            // Otherwise: the deterministic attempt found unvalidated candidates and the LLM
-            // found nothing at all - keep the deterministic candidates as the best available
-            // guess rather than discarding them for an empty LLM result.
         }
 
         if (candidates.Count == 0)
         {
             candidates = await TryAttemptAsync(OpenLibraryQueryBuilder.BuildKeywordsOnly(activeExtraction));
+            reusableRanked = null;
         }
 
         if (candidates.Count == 0)
         {
             candidates = await TryAttemptAsync(activeExtraction.RawQuery);
+            reusableRanked = null;
         }
 
-        var ranked = ranker.Rank(activeExtraction, candidates);
+        var ranked = reusableRanked ?? ranker.Rank(activeExtraction, candidates);
 
         return new BookSearchResult
         {
@@ -148,10 +171,14 @@ public sealed class BookSearchService(
     /// True when there's at least one candidate and, if the extraction has a structured
     /// title/author to validate against, the top-ranked candidate is an exact match for both.
     /// Used only to decide whether a deterministic extraction is trustworthy enough to skip the
-    /// LLM second opinion - always false for zero candidates.
+    /// LLM second opinion - always false for zero candidates. Also returns the ranked candidates
+    /// computed along the way (null when candidates is empty, since nothing was ranked) so
+    /// callers can reuse them instead of ranking the same inputs again later.
     /// </summary>
-    private bool HasValidatedMatch(ExtractionResult extraction, IReadOnlyList<OpenLibraryDoc> candidates)
+    private bool HasValidatedMatch(ExtractionResult extraction, IReadOnlyList<OpenLibraryDoc> candidates, out IReadOnlyList<RankedResult>? rankedCandidates)
     {
+        rankedCandidates = null;
+
         if (candidates.Count == 0)
         {
             return false;
@@ -164,7 +191,8 @@ public sealed class BookSearchService(
             return true;
         }
 
-        var top = ranker.Rank(extraction, candidates)[0];
+        rankedCandidates = ranker.Rank(extraction, candidates);
+        var top = rankedCandidates[0];
         return top.Breakdown.TitleSimilarity >= ExactMatchThreshold && top.Breakdown.AuthorSimilarity >= ExactMatchThreshold;
     }
 }

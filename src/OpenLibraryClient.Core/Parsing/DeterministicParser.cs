@@ -107,11 +107,11 @@ public sealed class DeterministicParser : IDeterministicParser
         var remainder = normalized;
         if (title is not null)
         {
-            remainder = remainder.Replace(title, "", StringComparison.OrdinalIgnoreCase);
+            remainder = RemoveWholeWordOccurrence(remainder, title);
         }
         if (author is not null)
         {
-            remainder = remainder.Replace(author, "", StringComparison.OrdinalIgnoreCase);
+            remainder = RemoveWholeWordOccurrence(remainder, author);
         }
 
         var tokens = Regex.Split(remainder.ToLowerInvariant(), @"[^\p{L}\p{Nd}]+")
@@ -120,5 +120,23 @@ public sealed class DeterministicParser : IDeterministicParser
             .ToList();
 
         return tokens;
+    }
+
+    /// <summary>
+    /// Removes a whole-word/whole-phrase occurrence of <paramref name="value"/> from
+    /// <paramref name="input"/> using word boundaries, rather than a naive substring replace.
+    /// A plain <c>string.Replace</c> would incorrectly strip partial-word matches - e.g. a short
+    /// title/author like "Dun" or "It" could otherwise delete letters out of unrelated words
+    /// (e.g. "Dune") elsewhere in the remainder, corrupting keyword extraction.
+    /// </summary>
+    private static string RemoveWholeWordOccurrence(string input, string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return input;
+        }
+
+        var pattern = $@"\b{Regex.Escape(value)}\b";
+        return Regex.Replace(input, pattern, "", RegexOptions.IgnoreCase);
     }
 }

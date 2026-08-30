@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OpenLibraryClient.Api/OpenLibraryClient.Api.csproj" />
+    <Project Path="src/OpenLibraryClient.Core/OpenLibraryClient.Core.csproj" />
+    <Project Path="src/OpenLibraryClient.Infrastructure/OpenLibraryClient.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OpenLibraryClient.Tests/OpenLibraryClient.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,28 @@
+# .NET build output
+[Bb]in/
+[Oo]bj/
+*.user
+
+# Visual Studio
+.vs/
+
+# JetBrains Rider
+.idea/
+
+# Test results
+[Tt]est[Rr]esult*/
+
+# User-specific files
+*.suo
+*.userosscache
+*.sln.docstates
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Frontend (also covered by frontend/.gitignore; kept here for a repo-wide safety net)
+node_modules/
+dist/
+dist-ssr/
+*.local
